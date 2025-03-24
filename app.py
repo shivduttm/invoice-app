@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request, render_template, send_file
+from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 import pdfkit
@@ -14,9 +15,13 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # ✅ Initialize database
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 
-# ✅ Configure wkhtmltopdf path
-PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe")
+import pdfkit
+import shutil
+
+path_wkhtmltopdf = shutil.which("wkhtmltopdf")
+PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf=path_wkhtmltopdf)
 
 # ✅ Invoice Model
 class Invoice(db.Model):
