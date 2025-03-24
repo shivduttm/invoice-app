@@ -1,0 +1,105 @@
+from flask import Flask, jsonify, request, render_template, send_file
+from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
+import pdfkit
+import os
+
+# Initialize Flask app
+app = Flask(__name__)
+CORS(app)  # Allow React frontend to communicate with Flask
+
+# ✅ Database Configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://invoice_user:securepassword@localhost/invoice_app'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# ✅ Initialize database
+db = SQLAlchemy(app)
+
+# ✅ Configure wkhtmltopdf path
+PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe")
+
+# ✅ Invoice Model
+class Invoice(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    client_name = db.Column(db.String(100), nullable=False)
+    client_email = db.Column(db.String(100), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+
+# ✅ Create database tables
+with app.app_context():
+    db.create_all()
+
+# ✅ Route: Home
+@app.route('/')
+def home():
+    return jsonify({"message": "Flask Backend is Running!"})
+
+# ✅ Route: Create Invoice (POST)
+@app.route('/api/create-invoice', methods=['POST'])
+def create_invoice():
+    try:
+        data = request.json
+        new_invoice = Invoice(
+            client_name=data.get('client_name'),
+            client_email=data.get('client_email'),
+            amount=data.get('amount')
+        )
+        db.session.add(new_invoice)
+        db.session.commit()
+        return jsonify({"message": "Invoice created successfully!", "invoice_id": new_invoice.id}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+# ✅ Route: Get a Single Invoice by ID (GET)
+@app.route('/api/get-invoice/<int:invoice_id>', methods=['GET'])
+def get_invoice(invoice_id):
+    invoice = Invoice.query.get(invoice_id)
+    if not invoice:
+        return jsonify({"error": "Invoice not found"}), 404
+    return jsonify({
+        "id": invoice.id,
+        "client_name": invoice.client_name,
+        "client_email": invoice.client_email,
+        "amount": invoice.amount
+    })
+
+# ✅ Route: Get All Invoices (GET)
+@app.route('/api/get-all-invoices', methods=['GET'])
+def get_all_invoices():
+    invoices = Invoice.query.all()
+    invoice_list = [{
+        "id": inv.id,
+        "client_name": inv.client_name,
+        "client_email": inv.client_email,
+        "amount": inv.amount
+    } for inv in invoices]
+    return jsonify(invoice_list)
+
+# ✅ Route: Generate Invoice PDF
+@app.route('/api/generate-invoice/<int:invoice_id>', methods=['GET'])
+def generate_invoice(invoice_id):
+    invoice = Invoice.query.get(invoice_id)
+    if not invoice:
+        return jsonify({"error": "Invoice not found"}), 404
+
+    invoice_data = {
+        "id": invoice.id,
+        "client_name": invoice.client_name,
+        "client_email": invoice.client_email,
+        "amount": invoice.amount
+    }
+
+    # Render the HTML template
+    html = render_template('invoice_template.html', invoice=invoice_data)
+
+    # Generate PDF
+    pdf_filename = f"invoice_{invoice_id}.pdf"
+    pdfkit.from_string(html, pdf_filename, configuration=PDFKIT_CONFIG)
+
+    return send_file(pdf_filename, as_attachment=True)
+
+# Run the app
+if __name__ == "__main__":
+    from waitress import serve
+    serve(app, host="0.0.0.0", port=5000)
