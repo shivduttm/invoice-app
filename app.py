@@ -26,7 +26,7 @@ if DATABASE_URL is None:
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://")
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://invoice_user:securepassword@localhost/invoice_app'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://invoice_user:securepassword@localhost:5432/invoice_app'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # ✅ Initialize database
