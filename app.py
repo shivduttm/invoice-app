@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv()  # Load environment variables from .env
+
 import os
 import shutil
 import pdfkit
@@ -7,26 +8,22 @@ from flask import Flask, jsonify, request, render_template, send_file
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
-from dotenv import load_dotenv
-
-# ✅ Load environment variables from .env
-load_dotenv()
 
 # ✅ Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Allow React frontend to communicate with Flask
+CORS(app)  # Enable CORS for frontend integration
 
 # ✅ Database Configuration
 DATABASE_URL = os.getenv('DATABASE_URL')
 
-if DATABASE_URL is None:
-    raise ValueError("⚠️ DATABASE_URL is not set! Please configure your environment variables.")
+if not DATABASE_URL:
+    raise ValueError("⚠️ DATABASE_URL is not set in the .env file!")
 
-# Fix for Render's incorrect "postgres://" format
+# Fix Render's incorrect "postgres://" format
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://")
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://invoice_user:securepassword@localhost:5432/invoice_app'
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # ✅ Initialize database
@@ -34,10 +31,14 @@ db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
 # ✅ PDFKit Configuration
-path_wkhtmltopdf = shutil.which("wkhtmltopdf")
-if not path_wkhtmltopdf:
-    raise FileNotFoundError("⚠️ wkhtmltopdf not found! Install it before running this app.")
-PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf=path_wkhtmltopdf)
+try:
+    path_wkhtmltopdf = shutil.which("wkhtmltopdf")
+    if not path_wkhtmltopdf:
+        raise FileNotFoundError("⚠️ wkhtmltopdf not found! Install it before running this app.")
+    PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf=path_wkhtmltopdf)
+except Exception as e:
+    print(f"❌ PDFKit Error: {e}")
+    PDFKIT_CONFIG = None
 
 # ✅ Invoice Model
 class Invoice(db.Model):
@@ -45,10 +46,6 @@ class Invoice(db.Model):
     client_name = db.Column(db.String(100), nullable=False)
     client_email = db.Column(db.String(100), nullable=False)
     amount = db.Column(db.Float, nullable=False)
-
-# ✅ Create database tables if they don’t exist
-with app.app_context():
-    db.create_all()
 
 # ✅ Route: Home
 @app.route('/')
@@ -60,7 +57,9 @@ def home():
 def create_invoice():
     try:
         data = request.json
-        if not data or not all(k in data for k in ("client_name", "client_email", "amount")):
+        required_fields = ("client_name", "client_email", "amount")
+        
+        if not data or not all(k in data for k in required_fields):
             return jsonify({"error": "Missing required fields"}), 400
 
         new_invoice = Invoice(
@@ -117,6 +116,9 @@ def generate_invoice(invoice_id):
     # Render the HTML template
     html = render_template('invoice_template.html', invoice=invoice_data)
 
+    if not PDFKIT_CONFIG:
+        return jsonify({"error": "⚠️ PDF generation is not available (wkhtmltopdf missing)."}), 500
+
     # Generate PDF
     pdf_filename = f"invoice_{invoice_id}.pdf"
     pdfkit.from_string(html, pdf_filename, configuration=PDFKIT_CONFIG)
@@ -126,4 +128,5 @@ def generate_invoice(invoice_id):
 # ✅ Run the app
 if __name__ == "__main__":
     from waitress import serve
-    serve(app, host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    port = int(os.getenv("PORT", 5000))
+    serve(app, host="0.0.0.0", port=port)
